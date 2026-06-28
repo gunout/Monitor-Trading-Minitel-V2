@@ -162,11 +162,342 @@ ASSETS = {
 
 WATCHLIST = list(ASSETS.keys())
 
-# ... (le reste du code pour calculate_sma, calculate_ema, etc. reste inchangé) ...
+# ============================================================
+# CALCUL DES INDICATEURS TECHNIQUES
+# ============================================================
+
+def calculate_sma(data, period):
+    if len(data) < period:
+        return [None] * len(data)
+    result = []
+    for i in range(len(data)):
+        if i < period - 1:
+            result.append(None)
+        else:
+            result.append(sum(data[i-period+1:i+1]) / period)
+    return result
+
+def calculate_ema(data, period):
+    if len(data) < period:
+        return [None] * len(data)
+    k = 2 / (period + 1)
+    result = [data[0]]
+    for i in range(1, len(data)):
+        result.append(data[i] * k + result[-1] * (1 - k))
+    return result
+
+def calculate_rsi(data, period=14):
+    if len(data) < period + 1:
+        return [None] * len(data)
+
+    result = [None] * len(data)
+    gains = []
+    losses = []
+
+    for i in range(1, len(data)):
+        diff = data[i] - data[i-1]
+        gains.append(max(diff, 0))
+        losses.append(max(-diff, 0))
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+
+    if avg_loss == 0:
+        result[period] = 100
+    else:
+        result[period] = 100 - (100 / (1 + avg_gain / avg_loss))
+
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+        if avg_loss == 0:
+            result[i+1] = 100
+        else:
+            result[i+1] = 100 - (100 / (1 + avg_gain / avg_loss))
+
+    return result
+
+def calculate_macd(data, fast=12, slow=26, signal=9):
+    if len(data) < slow:
+        return {'macd': [None] * len(data), 'signal': [None] * len(data), 'histogram': [None] * len(data)}
+
+    ema_fast = calculate_ema(data, fast)
+    ema_slow = calculate_ema(data, slow)
+
+    macd_line = []
+    for i in range(len(data)):
+        if ema_fast[i] is not None and ema_slow[i] is not None:
+            macd_line.append(ema_fast[i] - ema_slow[i])
+        else:
+            macd_line.append(None)
+
+    macd_clean = [x for x in macd_line if x is not None]
+    signal_line = calculate_ema(macd_clean, signal) if macd_clean else []
+
+    signal_full = [None] * len(data)
+    idx = 0
+    for i in range(len(data)):
+        if macd_line[i] is not None:
+            if idx < len(signal_line):
+                signal_full[i] = signal_line[idx]
+            idx += 1
+
+    histogram = []
+    for i in range(len(data)):
+        if macd_line[i] is not None and signal_full[i] is not None:
+            histogram.append(macd_line[i] - signal_full[i])
+        else:
+            histogram.append(None)
+
+    return {'macd': macd_line, 'signal': signal_full, 'histogram': histogram}
+
+def calculate_bollinger(data, period=20, std_mult=2):
+    if len(data) < period:
+        return {'upper': [None] * len(data), 'middle': [None] * len(data), 'lower': [None] * len(data)}
+
+    sma = calculate_sma(data, period)
+    upper = []
+    lower = []
+
+    for i in range(len(data)):
+        if sma[i] is None:
+            upper.append(None)
+            lower.append(None)
+        else:
+            window = data[i-period+1:i+1]
+            std = np.std(window)
+            upper.append(sma[i] + std_mult * std)
+            lower.append(sma[i] - std_mult * std)
+
+    return {'upper': upper, 'middle': sma, 'lower': lower}
+
+def calculate_atr(high, low, close, period=14):
+    if len(close) < period + 1:
+        return [None] * len(close)
+
+    tr = []
+    for i in range(1, len(close)):
+        hl = high[i] - low[i]
+        hc = abs(high[i] - close[i-1])
+        lc = abs(low[i] - close[i-1])
+        tr.append(max(hl, hc, lc))
+
+    atr = [None] * len(close)
+    atr[period] = sum(tr[:period]) / period
+
+    for i in range(period, len(tr)):
+        atr[i+1] = (atr[i] * (period - 1) + tr[i]) / period
+
+    return atr
+
+def calculate_stochastic(high, low, close, k_period=14, d_period=3):
+    if len(close) < k_period:
+        return {'k': [None] * len(close), 'd': [None] * len(close)}
+
+    k_values = [None] * len(close)
+    for i in range(k_period - 1, len(close)):
+        high_max = max(high[i-k_period+1:i+1])
+        low_min = min(low[i-k_period+1:i+1])
+        if high_max == low_min:
+            k_values[i] = 50
+        else:
+            k_values[i] = ((close[i] - low_min) / (high_max - low_min)) * 100
+
+    d_values = [None] * len(close)
+    for i in range(k_period - 1 + d_period - 1, len(close)):
+        valid_k = [k for k in k_values[i-d_period+1:i+1] if k is not None]
+        if valid_k:
+            d_values[i] = sum(valid_k) / len(valid_k)
+
+    return {'k': k_values, 'd': d_values}
+
+def calculate_volatility(data, period=20):
+    if len(data) < period + 1:
+        return 0
+    returns = []
+    for i in range(len(data) - period, len(data)):
+        if i > 0 and data[i-1] != 0:
+            returns.append((data[i] - data[i-1]) / data[i-1])
+    if len(returns) < 2:
+        return 0
+    std = np.std(returns)
+    return std * np.sqrt(252) * 100
+
+def calculate_all_indicators(candles):
+    if not candles or len(candles) < 20:
+        return {}
+
+    close = [c['close'] for c in candles]
+    high = [c['high'] for c in candles]
+    low = [c['low'] for c in candles]
+    current_price = close[-1] if close else 0
+
+    indicators = {}
+
+    indicators['sma_20'] = calculate_sma(close, 20)
+    indicators['sma_50'] = calculate_sma(close, 50)
+    indicators['sma_200'] = calculate_sma(close, 200)
+    indicators['ema_12'] = calculate_ema(close, 12)
+    indicators['ema_26'] = calculate_ema(close, 26)
+    indicators['rsi'] = calculate_rsi(close, 14)
+
+    macd = calculate_macd(close)
+    indicators['macd'] = macd['macd']
+    indicators['macd_signal'] = macd['signal']
+    indicators['macd_histogram'] = macd['histogram']
+
+    bb = calculate_bollinger(close)
+    indicators['bb_upper'] = bb['upper']
+    indicators['bb_middle'] = bb['middle']
+    indicators['bb_lower'] = bb['lower']
+
+    sto = calculate_stochastic(high, low, close)
+    indicators['stoch_k'] = sto['k']
+    indicators['stoch_d'] = sto['d']
+
+    indicators['atr'] = calculate_atr(high, low, close)
+    indicators['volatility'] = calculate_volatility(close)
+
+    if len(close) >= 10:
+        indicators['momentum'] = ((close[-1] - close[-10]) / close[-10]) * 100
+    else:
+        indicators['momentum'] = 0
+
+    indicators['current_price'] = current_price
+    indicators['last_rsi'] = indicators['rsi'][-1] if indicators['rsi'] and indicators['rsi'][-1] is not None else None
+    indicators['last_macd'] = indicators['macd'][-1] if indicators['macd'] and indicators['macd'][-1] is not None else None
+    indicators['last_macd_signal'] = indicators['macd_signal'][-1] if indicators['macd_signal'] and indicators['macd_signal'][-1] is not None else None
+    indicators['last_sma_20'] = indicators['sma_20'][-1] if indicators['sma_20'] and indicators['sma_20'][-1] is not None else None
+    indicators['last_sma_50'] = indicators['sma_50'][-1] if indicators['sma_50'] and indicators['sma_50'][-1] is not None else None
+    indicators['last_sma_200'] = indicators['sma_200'][-1] if indicators['sma_200'] and indicators['sma_200'][-1] is not None else None
+    indicators['last_stoch_k'] = indicators['stoch_k'][-1] if indicators['stoch_k'] and indicators['stoch_k'][-1] is not None else None
+    indicators['last_stoch_d'] = indicators['stoch_d'][-1] if indicators['stoch_d'] and indicators['stoch_d'][-1] is not None else None
+    indicators['last_bb_upper'] = indicators['bb_upper'][-1] if indicators['bb_upper'] and indicators['bb_upper'][-1] is not None else None
+    indicators['last_bb_middle'] = indicators['bb_middle'][-1] if indicators['bb_middle'] and indicators['bb_middle'][-1] is not None else None
+    indicators['last_bb_lower'] = indicators['bb_lower'][-1] if indicators['bb_lower'] and indicators['bb_lower'][-1] is not None else None
+    indicators['last_atr'] = indicators['atr'][-1] if indicators['atr'] and indicators['atr'][-1] is not None else None
+
+    # Signaux IA
+    signals = []
+    score = 0
+
+    if indicators['last_rsi'] is not None:
+        if indicators['last_rsi'] < 30:
+            signals.append({'type': 'buy', 'indicator': 'RSI', 'value': f"{indicators['last_rsi']:.1f}", 'message': 'Zone de survente'})
+            score += 15
+        elif indicators['last_rsi'] > 70:
+            signals.append({'type': 'sell', 'indicator': 'RSI', 'value': f"{indicators['last_rsi']:.1f}", 'message': 'Zone de surachat'})
+            score -= 15
+
+    if indicators['last_macd'] is not None and indicators['last_macd_signal'] is not None and len(indicators['macd']) > 1:
+        prev_macd = indicators['macd'][-2]
+        prev_signal = indicators['macd_signal'][-2]
+        if prev_macd is not None and prev_signal is not None:
+            if prev_macd < prev_signal and indicators['last_macd'] > indicators['last_macd_signal']:
+                signals.append({'type': 'buy', 'indicator': 'MACD', 'value': f"{indicators['last_macd']:.3f}", 'message': 'Croisement haussier'})
+                score += 15
+            elif prev_macd > prev_signal and indicators['last_macd'] < indicators['last_macd_signal']:
+                signals.append({'type': 'sell', 'indicator': 'MACD', 'value': f"{indicators['last_macd']:.3f}", 'message': 'Croisement baissier'})
+                score -= 15
+
+    if indicators['last_sma_20'] is not None and indicators['last_sma_50'] is not None:
+        prev_sma20 = indicators['sma_20'][-2] if len(indicators['sma_20']) > 1 else None
+        prev_sma50 = indicators['sma_50'][-2] if len(indicators['sma_50']) > 1 else None
+        if prev_sma20 is not None and prev_sma50 is not None:
+            if prev_sma20 < prev_sma50 and indicators['last_sma_20'] > indicators['last_sma_50']:
+                signals.append({'type': 'buy', 'indicator': 'SMA', 'value': 'Golden Cross', 'message': 'Croisement haussier 20/50'})
+                score += 12
+            elif prev_sma20 > prev_sma50 and indicators['last_sma_20'] < indicators['last_sma_50']:
+                signals.append({'type': 'sell', 'indicator': 'SMA', 'value': 'Death Cross', 'message': 'Croisement baissier 20/50'})
+                score -= 12
+
+    if indicators['last_stoch_k'] is not None and indicators['last_stoch_d'] is not None:
+        if indicators['last_stoch_k'] < 20 and indicators['last_stoch_d'] < 20:
+            signals.append({'type': 'buy', 'indicator': 'Stochastic', 'value': f"K:{indicators['last_stoch_k']:.1f}", 'message': 'Zone de survente'})
+            score += 10
+        elif indicators['last_stoch_k'] > 80 and indicators['last_stoch_d'] > 80:
+            signals.append({'type': 'sell', 'indicator': 'Stochastic', 'value': f"K:{indicators['last_stoch_k']:.1f}", 'message': 'Zone de surachat'})
+            score -= 10
+
+    if indicators['last_bb_lower'] is not None and indicators['last_bb_upper'] is not None:
+        if current_price <= indicators['last_bb_lower'] * 1.01:
+            signals.append({'type': 'buy', 'indicator': 'Bollinger', 'value': f"${current_price:.2f}", 'message': 'Proche bande inférieure'})
+            score += 8
+        elif current_price >= indicators['last_bb_upper'] * 0.99:
+            signals.append({'type': 'sell', 'indicator': 'Bollinger', 'value': f"${current_price:.2f}", 'message': 'Proche bande supérieure'})
+            score -= 8
+
+    if indicators['momentum'] > 5:
+        signals.append({'type': 'buy', 'indicator': 'Momentum', 'value': f"{indicators['momentum']:.1f}%", 'message': 'Momentum haussier'})
+        score += 8
+    elif indicators['momentum'] < -5:
+        signals.append({'type': 'sell', 'indicator': 'Momentum', 'value': f"{indicators['momentum']:.1f}%", 'message': 'Momentum baissier'})
+        score -= 8
+
+    if indicators['volatility'] > 50:
+        signals.append({'type': 'neutral', 'indicator': 'Volatilité', 'value': f"{indicators['volatility']:.1f}%", 'message': 'Volatilité élevée'})
+    elif indicators['volatility'] < 15:
+        signals.append({'type': 'neutral', 'indicator': 'Volatilité', 'value': f"{indicators['volatility']:.1f}%", 'message': 'Volatilité faible'})
+
+    if score > 20:
+        recommendation = 'ACHAT'
+        confidence = min(95, 50 + abs(score) * 0.8)
+    elif score < -20:
+        recommendation = 'VENTE'
+        confidence = min(95, 50 + abs(score) * 0.8)
+    else:
+        recommendation = 'NEUTRE'
+        confidence = 50 + (abs(score) / 2)
+
+    confidence = min(95, max(15, confidence))
+
+    if indicators['last_atr'] is not None and indicators['last_atr'] > 0:
+        indicators['stop_loss'] = current_price - 2 * indicators['last_atr']
+        indicators['take_profit'] = current_price + 2 * indicators['last_atr']
+    else:
+        indicators['stop_loss'] = current_price * 0.975
+        indicators['take_profit'] = current_price * 1.05
+
+    indicators['signals'] = signals
+    indicators['recommendation'] = recommendation
+    indicators['confidence'] = confidence
+    indicators['score'] = score
+    indicators['buy_signals'] = sum(1 for s in signals if s['type'] == 'buy')
+    indicators['sell_signals'] = sum(1 for s in signals if s['type'] == 'sell')
+    indicators['is_strong_signal'] = (score > 30 or score < -30) and confidence > 70
+
+    try:
+        if len(close) >= 30:
+            x = np.arange(len(close)).reshape(-1, 1)
+            y = np.array(close).reshape(-1, 1)
+            model = make_pipeline(PolynomialFeatures(2), LinearRegression())
+            model.fit(x, y)
+            future = np.arange(len(close), len(close) + 5).reshape(-1, 1)
+            predictions = model.predict(future).flatten()
+            indicators['predictions'] = [float(p) for p in predictions]
+        else:
+            indicators['predictions'] = [current_price] * 5
+    except:
+        indicators['predictions'] = [current_price] * 5
+
+    return indicators
 
 # ============================================================
-# ROUTES CORRIGÉES
+# ROUTES
 # ============================================================
+
+@app.route('/static/<path:filename>')
+def static_files(filename):
+    return send_from_directory('static', filename)
+
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
+@app.route('/api/clear-cache')
+def clear_cache():
+    cache.clear()
+    return jsonify({'status': 'ok'})
 
 @app.route('/api/trading/<symbol>')
 def get_trading(symbol):
@@ -268,6 +599,48 @@ def get_trading(symbol):
         logger.error(f"Erreur {symbol}: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/insights/<symbol>')
+def get_insights(symbol):
+    """Récupère les insights IA pour un symbole"""
+    try:
+        cached = get_cached(f"insights_{symbol}")
+        if cached:
+            return jsonify(cached)
+
+        effective_symbol = get_effective_symbol(symbol)
+        ticker = yf.Ticker(effective_symbol)
+        hist = ticker.history(period='3mo')
+
+        if hist.empty or len(hist) < 30:
+            return jsonify({'error': 'Pas assez de données'}), 404
+
+        candles = []
+        for idx, row in hist.iterrows():
+            candles.append({
+                'time': int(idx.timestamp()),
+                'open': safe_float(row['Open']),
+                'high': safe_float(row['High']),
+                'low': safe_float(row['Low']),
+                'close': safe_float(row['Close']),
+                'volume': safe_int(row['Volume'])
+            })
+
+        indicators = calculate_all_indicators(candles)
+        indicators['symbol'] = symbol
+        indicators['name'] = ASSETS.get(symbol, {}).get('name', symbol)
+        indicators['icon'] = ASSETS.get(symbol, {}).get('icon', '📈')
+
+        # Ajouter le fallback info
+        result = dict(indicators)
+        result['is_fallback'] = effective_symbol != symbol
+
+        set_cached(f"insights_{symbol}", result)
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Erreur insights {symbol}: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/watchlist')
 def get_watchlist():
     try:
@@ -352,6 +725,21 @@ def get_top_performers():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/market-status')
+def market_status():
+    now = datetime.now(US_TIMEZONE)
+    is_open = now.weekday() < 5 and 9 <= now.hour <= 16
+    return jsonify({
+        'status': 'open' if is_open else 'closed',
+        'label': 'Ouvert' if is_open else 'Fermé',
+        'icon': '🟢' if is_open else '🔴',
+        'time': now.strftime('%H:%M:%S')
+    })
+
+@app.route('/')
+def index():
+    return render_template('monitor.html')
+
 # ============================================================
 # WEBSOCKET - AVEC MEILLEURE GESTION D'ERREURS
 # ============================================================
@@ -412,5 +800,6 @@ if __name__ == '__main__':
     print("📈 Symboles disponibles: " + str(len(WATCHLIST)))
     print("=" * 70)
     print("🔄 Fallback activé pour les symboles problématiques")
+    print("=" * 70)
 
     socketio.run(app, host='0.0.0.0', port=5000, debug=True)
