@@ -1,0 +1,1651 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 TRADING MONITOR - Indicateurs + IA</title>
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a0a;
+            color: #33ff33;
+            font-family: 'VT323', 'Courier New', monospace;
+            padding: 10px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            border: 2px solid #33ff33;
+            padding: 12px;
+            background: #0a0a0a;
+        }
+        .header {
+            border-bottom: 2px solid #33ff33;
+            padding-bottom: 10px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .title {
+            font-size: 2rem;
+            font-weight: bold;
+            letter-spacing: 4px;
+        }
+        .title .blink { animation: blink 1s infinite; }
+        @keyframes blink { 0%,49%{opacity:1} 50%,100%{opacity:0} }
+        .title .ind-color { color: #ff6b00; }
+        .title .ia-color { color: #00ccff; }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+            border-bottom: 1px solid #33ff33;
+            padding-bottom: 8px;
+        }
+        .tab {
+            padding: 6px 16px;
+            border: 1px solid #33ff33;
+            background: transparent;
+            color: #33ff33;
+            cursor: pointer;
+            font-family: 'VT323', monospace;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .tab:hover { background: rgba(51,255,51,0.1); }
+        .tab.active { background: rgba(51,255,51,0.15); border-color: #33ff33; }
+        .tab .icon { margin-right: 4px; }
+        .tab .badge-ind {
+            background: #ff6b00;
+            color: #000;
+            font-size: 0.45rem;
+            padding: 1px 6px;
+            border-radius: 8px;
+            margin-left: 4px;
+        }
+        .tab .badge-ia {
+            background: #00ccff;
+            color: #000;
+            font-size: 0.45rem;
+            padding: 1px 6px;
+            border-radius: 8px;
+            margin-left: 4px;
+        }
+
+        .main-grid { display: grid; grid-template-columns: 2.5fr 1fr; gap: 12px; }
+        .card { border: 1px solid #33ff33; padding: 10px; margin-bottom: 10px; background: rgba(51,255,51,0.02); }
+        .card-title { font-size: 0.9rem; font-weight: bold; border-bottom: 1px solid #33ff33; padding-bottom: 4px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+
+        .price-display { text-align: center; padding: 15px; border: 1px solid #33ff33; }
+        .price { font-size: 2.8rem; font-weight: bold; text-shadow: 0 0 30px rgba(51,255,51,0.1); }
+        .change-positive { color: #33ff33; }
+        .change-negative { color: #ff3333; }
+        #chart-container { height: 400px; border: 1px solid #33ff33; background: #0a0a0a; position: relative; }
+
+        .chart-controls {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            margin-bottom: 8px;
+            padding: 4px;
+            background: rgba(51,255,51,0.03);
+            border: 1px solid #33ff33;
+        }
+        .chart-controls .group {
+            display: flex;
+            gap: 2px;
+            align-items: center;
+            padding: 0 6px;
+            border-right: 1px solid rgba(51,255,51,0.3);
+        }
+        .chart-controls .group:last-child { border-right: none; }
+        .chart-controls .group-label {
+            font-size: 0.55rem;
+            text-transform: uppercase;
+            opacity: 0.5;
+            margin-right: 4px;
+            white-space: nowrap;
+        }
+        .chart-controls button {
+            background: transparent;
+            border: 1px solid #33ff33;
+            color: #33ff33;
+            padding: 2px 8px;
+            font-family: 'VT323', monospace;
+            font-size: 0.65rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .chart-controls button:hover { background: rgba(51,255,51,0.1); }
+        .chart-controls button.active { background: rgba(51,255,51,0.2); }
+        .chart-controls button.indicator-btn { border-color: #ff6b00; color: #ff6b00; }
+        .chart-controls button.indicator-btn.active { background: rgba(255,107,0,0.2); }
+        .chart-controls button.ia-btn { border-color: #00ccff; color: #00ccff; }
+        .chart-controls button.ia-btn.active { background: rgba(0,204,255,0.2); }
+
+        .input-group { display: flex; gap: 6px; margin: 6px 0; }
+        .input-group input {
+            flex: 1;
+            background: transparent;
+            border: 1px solid #33ff33;
+            color: #33ff33;
+            padding: 4px 8px;
+            font-family: 'VT323', monospace;
+            font-size: 0.9rem;
+        }
+        .input-group input:focus { outline: none; background: rgba(51,255,51,0.05); }
+        .btn {
+            background: transparent;
+            border: 1px solid #33ff33;
+            color: #33ff33;
+            padding: 4px 12px;
+            font-family: 'VT323', monospace;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn:hover { background: rgba(51,255,51,0.1); }
+        .btn-sm { padding: 2px 8px; font-size: 0.65rem; }
+        .btn-ind { border-color: #ff6b00; color: #ff6b00; }
+        .btn-ia { border-color: #00ccff; color: #00ccff; }
+        .btn-success { border-color: #33ff33; color: #33ff33; }
+        .btn-danger { border-color: #ff3333; color: #ff3333; }
+        .btn-warning { border-color: #ffaa00; color: #ffaa00; }
+        .btn-export { border-color: #4CAF50; color: #4CAF50; }
+        .btn-compare { border-color: #9C27B0; color: #9C27B0; }
+        .btn-prefs { border-color: #FF9800; color: #FF9800; }
+        .btn-alert { border-color: #ff1744; color: #ff1744; }
+        .quick-buttons { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 4px; }
+
+        .watchlist-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 8px;
+            border: 1px solid #33ff33;
+            cursor: pointer;
+            margin-bottom: 2px;
+            background: rgba(51,255,51,0.02);
+            transition: all 0.2s;
+            font-size: 0.85rem;
+        }
+        .watchlist-item:hover { background: rgba(51,255,51,0.08); }
+        .watchlist-item .icon { margin-right: 6px; }
+        .watchlist-grid { max-height: 250px; overflow-y: auto; }
+        .watchlist-grid::-webkit-scrollbar { width: 4px; }
+        .watchlist-grid::-webkit-scrollbar-thumb { background: #33ff33; }
+
+        .indicators-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 6px;
+        }
+        .indicator-box {
+            border: 1px solid #33ff33;
+            padding: 6px 8px;
+            text-align: center;
+            background: rgba(51,255,51,0.02);
+            border-radius: 4px;
+        }
+        .indicator-box .name {
+            font-size: 0.5rem;
+            text-transform: uppercase;
+            opacity: 0.6;
+            letter-spacing: 1px;
+        }
+        .indicator-box .value {
+            font-size: 1rem;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+        .indicator-box .sub-value {
+            font-size: 0.7rem;
+            opacity: 0.7;
+        }
+        .indicator-box .value.bullish { color: #33ff33; }
+        .indicator-box .value.bearish { color: #ff3333; }
+        .indicator-box .value.neutral { color: #ffaa00; }
+
+        .signal-box {
+            border: 1px solid #33ff33;
+            padding: 4px 8px;
+            margin-bottom: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 4px;
+        }
+        .signal-buy { border-color: #33ff33; background: rgba(51,255,51,0.05); }
+        .signal-sell { border-color: #ff3333; background: rgba(255,51,51,0.05); }
+        .signal-neutral { border-color: #ffaa00; background: rgba(255,170,0,0.05); }
+        .signal-box .signal-icon { font-size: 1.2rem; }
+        .signal-box .signal-content { flex: 1; }
+        .signal-box .signal-content .signal-title { font-weight: bold; font-size: 0.8rem; }
+        .signal-box .signal-content .signal-text { font-size: 0.7rem; opacity: 0.7; }
+
+        .recommendation-box {
+            border: 2px solid #33ff33;
+            padding: 10px;
+            text-align: center;
+            margin-top: 8px;
+            border-radius: 4px;
+        }
+        .recommendation-buy { border-color: #33ff33; background: rgba(51,255,51,0.05); }
+        .recommendation-sell { border-color: #ff3333; background: rgba(255,51,51,0.05); }
+        .recommendation-neutral { border-color: #ffaa00; background: rgba(255,170,0,0.05); }
+        .recommendation-box .rec-title { font-size: 1.5rem; font-weight: bold; }
+        .recommendation-box .rec-confidence { font-size: 0.8rem; opacity: 0.7; }
+
+        .metrics-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-top: 8px; }
+        .metric-card { border: 1px solid #33ff33; padding: 4px; text-align: center; background: rgba(51,255,51,0.02); border-radius: 4px; }
+        .metric-card .label { font-size: 0.5rem; text-transform: uppercase; opacity: 0.6; letter-spacing: 1px; }
+        .metric-card .value { font-size: 1rem; font-weight: bold; margin-top: 2px; }
+
+        .prediction-grid { display: grid; grid-template-columns: repeat(5,1fr); gap: 4px; margin-top: 6px; }
+        .prediction-item { text-align: center; padding: 4px; border: 1px solid #33ff33; background: rgba(51,255,51,0.02); border-radius: 4px; }
+        .prediction-item .day { font-size: 0.5rem; text-transform: uppercase; opacity: 0.6; }
+        .prediction-item .price { font-weight: bold; font-size: 0.8rem; }
+        .prediction-item .change-pred { font-size: 0.6rem; }
+
+        .footer {
+            border-top: 2px solid #33ff33;
+            padding-top: 8px;
+            margin-top: 12px;
+            text-align: center;
+            font-size: 0.7rem;
+            opacity: 0.6;
+        }
+        .status-ok { color: #33ff33; }
+        .status-err { color: #ff3333; }
+
+        .price-info {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            font-size: 0.8rem;
+            opacity: 0.7;
+            margin-top: 6px;
+        }
+        .price-info span { display: flex; align-items: center; gap: 4px; }
+
+        .badge {
+            padding: 2px 8px;
+            border: 1px solid #33ff33;
+            font-size: 0.6rem;
+            background: rgba(51,255,51,0.05);
+            border-radius: 4px;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .signal-count {
+            font-size: 0.6rem;
+            padding: 1px 8px;
+            border-radius: 10px;
+            background: rgba(51,255,51,0.1);
+        }
+        .signal-count.buy { background: rgba(51,255,51,0.2); color: #33ff33; }
+        .signal-count.sell { background: rgba(255,51,51,0.2); color: #ff3333; }
+
+        .ia-score-box {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+        .ia-score-bullish { background: rgba(51,255,51,0.2); color: #33ff33; }
+        .ia-score-bearish { background: rgba(255,51,51,0.2); color: #ff3333; }
+        .ia-score-neutral { background: rgba(255,170,0,0.2); color: #ffaa00; }
+
+        /* Popup comparaison */
+        .compare-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .compare-modal.active {
+            display: flex;
+        }
+        .compare-modal-content {
+            background: #0a0a0a;
+            border: 2px solid #33ff33;
+            padding: 20px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            border-radius: 8px;
+        }
+        .compare-modal-content .close-btn {
+            float: right;
+            background: none;
+            border: none;
+            color: #33ff33;
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        .compare-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .compare-card {
+            border: 1px solid #33ff33;
+            padding: 10px;
+            text-align: center;
+            border-radius: 4px;
+        }
+        .compare-card .perf-positive { color: #33ff33; }
+        .compare-card .perf-negative { color: #ff3333; }
+
+        /* Notifications */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #0a0a0a;
+            border: 2px solid #33ff33;
+            padding: 15px 20px;
+            border-radius: 8px;
+            z-index: 2000;
+            max-width: 350px;
+            animation: slideIn 0.5s ease;
+            box-shadow: 0 0 30px rgba(51,255,51,0.1);
+        }
+        .notification.buy { border-color: #33ff33; }
+        .notification.sell { border-color: #ff3333; }
+        .notification .notif-title { font-size: 1.2rem; font-weight: bold; }
+        .notification .notif-text { font-size: 0.8rem; opacity: 0.7; }
+        .notification .notif-close {
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            background: none;
+            border: none;
+            color: #33ff33;
+            cursor: pointer;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @media (max-width: 1200px) { .main-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 768px) {
+            .title { font-size: 1.5rem; }
+            .metrics-grid { grid-template-columns: repeat(2,1fr); }
+            .indicators-grid { grid-template-columns: 1fr 1fr; }
+            .price { font-size: 2rem; }
+            .prediction-grid { grid-template-columns: repeat(3,1fr); }
+            #chart-container { height: 300px; }
+            .tabs .tab { font-size: 0.6rem; padding: 4px 8px; }
+        }
+        @media (max-width: 480px) {
+            .price { font-size: 1.5rem; }
+            #chart-container { height: 250px; }
+            .chart-controls .group { border-right: none; flex-wrap: wrap; }
+            .tabs .tab { font-size: 0.5rem; padding: 3px 6px; }
+            .indicators-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <div class="title">
+                    📊 TRADING MONITOR <span class="ind-color">INDICATEURS</span> + <span class="ia-color">IA</span> <span class="blink">▸</span>
+                    <span style="font-size:0.7rem;opacity:0.4;letter-spacing:2px;display:block;margin-top:-4px;">
+                        <i class="fas fa-chart-line"></i> RSI • MACD • SMA • BOLLINGER • STOCHASTIC • IA INSIGHTS
+                    </span>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <button class="btn btn-sm btn-alert" onclick="toggleAlerts()" id="alert-btn">
+                    <i class="fas fa-bell"></i> <span id="alert-status">🔕</span>
+                </button>
+                <button class="btn btn-sm btn-prefs" onclick="savePrefs()">
+                    <i class="fas fa-save"></i> Préfs
+                </button>
+                <button class="btn btn-sm btn-export" onclick="exportCSV()">
+                    <i class="fas fa-file-csv"></i> CSV
+                </button>
+                <button class="btn btn-sm btn-compare" onclick="openCompare()">
+                    <i class="fas fa-chart-bar"></i> Comparer
+                </button>
+                <span class="badge" style="border-color:#ff6b00;color:#ff6b00;">
+                    <i class="fas fa-calculator"></i> IND
+                </span>
+                <span class="badge" style="border-color:#00ccff;color:#00ccff;">
+                    <i class="fas fa-brain"></i> IA
+                </span>
+                <span id="status" style="border:1px solid #33ff33;padding:4px 12px;">⏳ CHARGEMENT...</span>
+            </div>
+        </div>
+
+        <!-- TABS -->
+        <div class="tabs" id="tabs">
+            <button class="tab active" data-tab="commodities"><span class="icon">🛢️</span>Commodités</button>
+            <button class="tab" data-tab="crypto"><span class="icon">₿</span>Crypto</button>
+            <button class="tab" data-tab="forex"><span class="icon">💱</span>Forex</button>
+            <button class="tab" data-tab="usstocks"><span class="icon">🇺🇸</span>US Stocks</button>
+            <button class="tab" data-tab="paris"><span class="icon">🇫🇷</span>Paris</button>
+            <button class="tab" data-tab="water"><span class="icon">🌊</span>Eau</button>
+        </div>
+
+        <!-- CONTENU DES TABS -->
+        <div id="tab-contents">
+            <div class="tab-content active" id="tab-commodities">
+                <div class="main-grid" id="tab-grid-commodities"></div>
+            </div>
+            <div class="tab-content" id="tab-crypto">
+                <div class="main-grid" id="tab-grid-crypto"></div>
+            </div>
+            <div class="tab-content" id="tab-forex">
+                <div class="main-grid" id="tab-grid-forex"></div>
+            </div>
+            <div class="tab-content" id="tab-usstocks">
+                <div class="main-grid" id="tab-grid-usstocks"></div>
+            </div>
+            <div class="tab-content" id="tab-paris">
+                <div class="main-grid" id="tab-grid-paris"></div>
+            </div>
+            <div class="tab-content" id="tab-water">
+                <div class="main-grid" id="tab-grid-water"></div>
+            </div>
+        </div>
+
+        <div class="footer">
+            📊 TRADING MONITOR v5.0 • 🔔 Alertes • 💾 Préférences • 📥 Export CSV • 📊 Comparaison • 100+ actifs
+        </div>
+    </div>
+
+    <!-- MODAL COMPARAISON -->
+    <div class="compare-modal" id="compare-modal">
+        <div class="compare-modal-content">
+            <button class="close-btn" onclick="closeCompare()">✕</button>
+            <h2 style="color:#33ff33;margin-bottom:10px;">📊 Comparaison d'actifs</h2>
+            <div class="input-group" style="margin-bottom:10px;">
+                <input type="text" id="compare-input" placeholder="GC=F,BTC-USD,AAPL" value="GC=F,BTC-USD,AAPL">
+                <button class="btn" onclick="runCompare()"><i class="fas fa-play"></i></button>
+            </div>
+            <div id="compare-results">
+                <div style="opacity:0.5;text-align:center;padding:20px;">Entrez les symboles séparés par des virgules</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================================================================
+        // CONFIGURATION
+        // ================================================================
+        var API_BASE = 'http://localhost:5000/api';
+        var WS_URL = 'http://localhost:5000';
+        var socket = io(WS_URL);
+        var currentSymbol = 'GC=F';
+        var currentPeriod = '1d';
+        var chartType = 'candle';
+        var chart = null;
+        var candlesData = [];
+        var currentTab = 'commodities';
+        var alertsEnabled = false;
+        var lastAlertSymbol = '';
+
+        var activeIndicators = {
+            sma: true,
+            ema: false,
+            rsi: false,
+            macd: false,
+            bb: false,
+            volume: false,
+            stochastic: false
+        };
+
+        var categorySymbols = {
+            'commodities': ['GC=F', 'SI=F', 'CL=F', 'BZ=F', 'NG=F', 'ZC=F', 'ZW=F', 'ZS=F', 'KC=F', 'CC=F', 'HG=F', 'PL=F', 'PA=F', 'RB=F', 'HO=F', 'ZM=F', 'ZL=F', 'SB=F', 'CT=F', 'LE=F', 'HE=F'],
+            'crypto': ['BTC-USD', 'ETH-USD', 'SOL-USD', 'ADA-USD', 'DOGE-USD', 'XRP-USD', 'BNB-USD', 'DOT-USD', 'LTC-USD', 'LINK-USD', 'AVAX-USD', 'MATIC-USD', 'SHIB-USD', 'UNI-USD'],
+            'forex': ['EURUSD=X', 'GBPUSD=X', 'USDJPY=X', 'USDCHF=X', 'AUDUSD=X', 'USDCAD=X', 'NZDUSD=X', 'EURGBP=X', 'EURJPY=X', 'GBPJPY=X', 'AUDJPY=X', 'CHFJPY=X'],
+            'usstocks': ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'TSLA', 'AMZN', 'META', 'JPM', 'V', 'WMT', 'JNJ', 'PG', 'KO', 'PEP', 'NFLX', 'DIS', '^GSPC', '^IXIC', '^DJI'],
+            'paris': ['ML.PA', 'FP.PA', 'SAN.PA', 'BNP.PA', 'OR.PA', 'AI.PA', 'SU.PA', 'RMS.PA', 'KER.PA', 'CAP.PA', 'SAF.PA', 'VIV.PA', 'STLA.PA', '^FCHI', '^SBF120'],
+            'water': ['PHO', 'FIW', 'CGW', 'PIO', 'EVX', 'AWK', 'XYL', 'AWR', 'WTRG', 'MSEX', 'CWT', 'SJW', 'VE', 'WAT', 'ECL', 'TTC']
+        };
+
+        var defaultSymbols = {
+            'commodities': 'GC=F',
+            'crypto': 'BTC-USD',
+            'forex': 'EURUSD=X',
+            'usstocks': 'AAPL',
+            'paris': 'ML.PA',
+            'water': 'PHO'
+        };
+
+        var categoryNames = {
+            'commodities': 'Commodités',
+            'crypto': 'Crypto',
+            'forex': 'Forex',
+            'usstocks': 'US Stocks',
+            'paris': 'Paris',
+            'water': 'Eau'
+        };
+
+        // ================================================================
+        // CHARGEMENT DES PRÉFÉRENCES
+        // ================================================================
+        function loadPrefs() {
+            try {
+                var prefs = JSON.parse(localStorage.getItem('trading_monitor_prefs'));
+                if (prefs) {
+                    if (prefs.favorite_symbol) {
+                        currentSymbol = prefs.favorite_symbol;
+                        // Trouver la catégorie
+                        for (var cat in categorySymbols) {
+                            if (categorySymbols[cat].indexOf(currentSymbol) !== -1) {
+                                switchTab(cat);
+                                break;
+                            }
+                        }
+                    }
+                    if (prefs.indicators) {
+                        for (var key in prefs.indicators) {
+                            if (activeIndicators.hasOwnProperty(key)) {
+                                activeIndicators[key] = prefs.indicators[key];
+                            }
+                        }
+                    }
+                    if (prefs.alerts_enabled !== undefined) {
+                        alertsEnabled = prefs.alerts_enabled;
+                        updateAlertButton();
+                    }
+                }
+            } catch(e) {}
+        }
+
+        function savePrefs() {
+            try {
+                var prefs = {
+                    favorite_symbol: currentSymbol,
+                    indicators: activeIndicators,
+                    alerts_enabled: alertsEnabled,
+                    saved_at: new Date().toISOString()
+                };
+                localStorage.setItem('trading_monitor_prefs', JSON.stringify(prefs));
+                showNotification('💾 Préférences sauvegardées', '✅');
+            } catch(e) {
+                console.error('Erreur sauvegarde:', e);
+            }
+        }
+
+        function updateAlertButton() {
+            var btn = document.getElementById('alert-btn');
+            var status = document.getElementById('alert-status');
+            if (alertsEnabled) {
+                btn.style.borderColor = '#33ff33';
+                status.textContent = '🔔 ON';
+                status.style.color = '#33ff33';
+            } else {
+                btn.style.borderColor = '#ff3333';
+                status.textContent = '🔕 OFF';
+                status.style.color = '#ff3333';
+            }
+        }
+
+        function toggleAlerts() {
+            alertsEnabled = !alertsEnabled;
+            updateAlertButton();
+            savePrefs();
+            if (alertsEnabled) {
+                showNotification('🔔 Alertes activées', '📢');
+                if (Notification.permission === 'default') {
+                    Notification.requestPermission();
+                }
+            } else {
+                showNotification('🔕 Alertes désactivées', '📢');
+            }
+        }
+
+        // ================================================================
+        // NOTIFICATIONS
+        // ================================================================
+        function showNotification(message, icon) {
+            var container = document.getElementById('notif-container');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'notif-container';
+                container.style.position = 'fixed';
+                container.style.top = '20px';
+                container.style.right = '20px';
+                container.style.zIndex = '2000';
+                document.body.appendChild(container);
+            }
+            var notif = document.createElement('div');
+            notif.className = 'notification';
+            notif.innerHTML = `
+                <button class="notif-close" onclick="this.parentElement.remove()">✕</button>
+                <div class="notif-title">${icon || '📢'} ${message}</div>
+            `;
+            container.appendChild(notif);
+            setTimeout(function() {
+                if (notif.parentElement) notif.remove();
+            }, 5000);
+        }
+
+        function sendBrowserNotification(title, body, type) {
+            if (!alertsEnabled) return;
+            if (!('Notification' in window)) return;
+            if (Notification.permission === 'granted') {
+                var notif = new Notification(title, {
+                    body: body,
+                    icon: type === 'buy' ? '🟢' : '🔴',
+                    tag: 'trading_alert'
+                });
+                setTimeout(function() { notif.close(); }, 8000);
+            } else if (Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+
+        // ================================================================
+        // EXPORT CSV
+        // ================================================================
+        function exportCSV() {
+            var sym = currentSymbol;
+            window.open(API_BASE + '/export-csv/' + encodeURIComponent(sym), '_blank');
+            showNotification('📥 Export CSV lancé pour ' + sym, '📊');
+        }
+
+        // ================================================================
+        // COMPARAISON
+        // ================================================================
+        function openCompare() {
+            document.getElementById('compare-modal').classList.add('active');
+        }
+
+        function closeCompare() {
+            document.getElementById('compare-modal').classList.remove('active');
+        }
+
+        function runCompare() {
+            var input = document.getElementById('compare-input').value.trim();
+            if (!input) return;
+            var symbols = input.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+            if (symbols.length < 2) {
+                document.getElementById('compare-results').innerHTML = '<div style="color:#ff3333;">❌ Au moins 2 symboles requis</div>';
+                return;
+            }
+            document.getElementById('compare-results').innerHTML = '<div style="opacity:0.5;text-align:center;padding:20px;">⏳ Chargement...</div>';
+
+            fetch(API_BASE + '/compare?symbols=' + encodeURIComponent(symbols.join(',')))
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('compare-results').innerHTML = '<div style="color:#ff3333;">❌ ' + data.error + '</div>';
+                        return;
+                    }
+                    if (!data || data.length === 0) {
+                        document.getElementById('compare-results').innerHTML = '<div style="opacity:0.5;text-align:center;padding:20px;">Aucune donnée</div>';
+                        return;
+                    }
+                    var html = '<div class="compare-grid">';
+                    data.forEach(function(item) {
+                        var perfCls = item.performance >= 0 ? 'perf-positive' : 'perf-negative';
+                        var perfSign = item.performance >= 0 ? '+' : '';
+                        html += `
+                            <div class="compare-card" style="border-color:${item.color || '#33ff33'};">
+                                <div style="font-size:1.5rem;">${item.icon || '📈'}</div>
+                                <div style="font-weight:bold;">${item.symbol}</div>
+                                <div style="font-size:0.7rem;opacity:0.5;">${item.name || ''}</div>
+                                <div style="font-size:1.1rem;margin:4px 0;">$${item.current_price.toFixed(2)}</div>
+                                <div class="${perfCls}">${perfSign}${item.performance.toFixed(2)}%</div>
+                                <div style="font-size:0.6rem;opacity:0.5;">Vol: ${item.volatility.toFixed(1)}%</div>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    document.getElementById('compare-results').innerHTML = html;
+                })
+                .catch(err => {
+                    document.getElementById('compare-results').innerHTML = '<div style="color:#ff3333;">❌ Erreur: ' + err.message + '</div>';
+                });
+        }
+
+        // Fermer le modal avec Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeCompare();
+        });
+
+        // ================================================================
+        // INITIALISATION
+        // ================================================================
+        document.addEventListener('DOMContentLoaded', function() {
+            // Charger les préférences
+            loadPrefs();
+
+            for (var cat in categorySymbols) {
+                var grid = document.getElementById('tab-grid-' + cat);
+                if (grid) {
+                    grid.innerHTML = generateTabContent(cat);
+                }
+            }
+            initTabs();
+            loadQuickButtons('commodities');
+
+            // Appliquer les préférences d'indicateurs
+            setTimeout(function() {
+                for (var key in activeIndicators) {
+                    var btn = document.querySelector('[data-indicator="' + key + '"]');
+                    if (btn) {
+                        btn.classList.toggle('active', activeIndicators[key]);
+                    }
+                }
+            }, 500);
+
+            fetchDataForTab('commodities');
+
+            socket.on('connect', function() {
+                document.getElementById('status').textContent = '🟢 CONNECTÉ';
+                document.getElementById('status').style.borderColor = '#33ff33';
+                socket.emit('request_insights', { symbol: currentSymbol });
+            });
+
+            socket.on('disconnect', function() {
+                document.getElementById('status').textContent = '🔴 DÉCONNECTÉ';
+                document.getElementById('status').style.borderColor = '#ff3333';
+            });
+
+            socket.on('insights_update', function(data) {
+                updateAIInsights(data);
+                // Vérifier les alertes
+                if (alertsEnabled && data.is_strong_signal && data.symbol !== lastAlertSymbol) {
+                    lastAlertSymbol = data.symbol;
+                    var type = data.recommendation === 'ACHAT' ? 'buy' : 'sell';
+                    var icon = type === 'buy' ? '🟢' : '🔴';
+                    var title = type === 'buy' ? '🚀 SIGNAL ACHAT' : '📉 SIGNAL VENTE';
+                    showNotification(title + ' ' + data.symbol + ' (Score: ' + data.score.toFixed(1) + ')', icon);
+                    sendBrowserNotification(
+                        title + ' ' + data.symbol,
+                        'Score: ' + data.score.toFixed(1) + ' | Confiance: ' + data.confidence.toFixed(0) + '%',
+                        type
+                    );
+                }
+            });
+
+            setInterval(function() { fetchDataForTab(currentTab); }, 60000);
+            setInterval(function() { refreshWatchlist(currentTab); }, 120000);
+            setInterval(function() { refreshTopPerformers(currentTab); }, 120000);
+        });
+
+        // ================================================================
+        // GÉNÉRATION DU CONTENU DES TABS
+        // ================================================================
+        function generateTabContent(category) {
+            var defaultSym = defaultSymbols[category] || 'GC=F';
+            var catName = categoryNames[category] || category;
+            return `
+                <div class="chart-col">
+                    <div class="card">
+                        <div class="price-display" id="price-display-${category}">
+                            <div>
+                                <span id="current-symbol-${category}" style="font-size:1.5rem;">${defaultSym}</span>
+                                <span id="current-exchange-${category}" style="opacity:0.6;font-size:0.9rem;">Market</span>
+                                <span id="current-category-${category}" style="opacity:0.4;font-size:0.7rem;margin-left:8px;">${catName}</span>
+                            </div>
+                            <div class="price" id="current-price-${category}">--</div>
+                            <div id="current-change-${category}">CHARGEMENT...</div>
+                            <div class="price-info">
+                                <span><i class="fas fa-arrow-up" style="color:#33ff33;"></i> HAUT: <strong id="day-high-${category}">--</strong></span>
+                                <span><i class="fas fa-arrow-down" style="color:#ff3333;"></i> BAS: <strong id="day-low-${category}">--</strong></span>
+                                <span><i class="fas fa-chart-simple"></i> VOLUME: <strong id="volume-${category}">--</strong></span>
+                                <span><i class="fas fa-clock"></i> <strong id="last-update-${category}">--</strong></span>
+                            </div>
+                            <div style="margin-top:8px;display:flex;justify-content:center;gap:15px;flex-wrap:wrap;font-size:0.8rem;">
+                                <span>Score IA: <strong id="ia-score-${category}" style="font-size:1rem;">--</strong></span>
+                                <span>Recommandation: <strong id="ia-reco-${category}" style="font-size:1rem;">--</strong></span>
+                                <span>Confiance: <strong id="ia-conf-${category}" style="font-size:1rem;">--</strong></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">
+                            <span><i class="fas fa-candlestick-chart"></i> CHANDELIERS</span>
+                            <span id="chart-badge" style="font-size:0.6rem;border:1px solid #33ff33;padding:1px 8px;">LIVE</span>
+                        </div>
+                        <div class="chart-controls">
+                            <div class="group">
+                                <span class="group-label">📅 PERIODE</span>
+                                <button class="active" data-period="1d" onclick="changePeriod('1d')">1J</button>
+                                <button data-period="5d" onclick="changePeriod('5d')">5J</button>
+                                <button data-period="1mo" onclick="changePeriod('1mo')">1M</button>
+                                <button data-period="3mo" onclick="changePeriod('3mo')">3M</button>
+                                <button data-period="6mo" onclick="changePeriod('6mo')">6M</button>
+                                <button data-period="1y" onclick="changePeriod('1y')">1A</button>
+                            </div>
+                            <div class="group">
+                                <span class="group-label">📊 INDICATEURS</span>
+                                <button class="indicator-btn active" data-indicator="sma" onclick="toggleIndicator('sma')">SMA</button>
+                                <button class="indicator-btn" data-indicator="ema" onclick="toggleIndicator('ema')">EMA</button>
+                                <button class="indicator-btn" data-indicator="rsi" onclick="toggleIndicator('rsi')">RSI</button>
+                                <button class="indicator-btn" data-indicator="macd" onclick="toggleIndicator('macd')">MACD</button>
+                                <button class="indicator-btn" data-indicator="bb" onclick="toggleIndicator('bb')">BB</button>
+                                <button class="indicator-btn" data-indicator="volume" onclick="toggleIndicator('volume')">VOL</button>
+                                <button class="indicator-btn" data-indicator="stochastic" onclick="toggleIndicator('stochastic')">STO</button>
+                            </div>
+                            <div class="group">
+                                <span class="group-label">🕯️ TYPE</span>
+                                <button class="active" data-type="candle" onclick="changeChartType('candle')">BOUGIES</button>
+                                <button data-type="line" onclick="changeChartType('line')">LIGNE</button>
+                            </div>
+                            <div class="group">
+                                <button class="btn-export btn-sm" onclick="exportCSV()"><i class="fas fa-file-csv"></i></button>
+                            </div>
+                        </div>
+                        <div id="chart-container-${category}"></div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="card">
+                        <div class="card-title"><span><i class="fas fa-search"></i> RECHERCHE</span></div>
+                        <div class="input-group">
+                            <input type="text" id="symbol-input-${category}" placeholder="${defaultSym}" value="${defaultSym}">
+                            <button class="btn" onclick="fetchDataForTab('${category}')"><i class="fas fa-arrow-right"></i></button>
+                        </div>
+                        <div class="quick-buttons" id="quick-buttons-${category}"></div>
+                    </div>
+
+                    <!-- INDICATEURS TECHNIQUES -->
+                    <div class="card">
+                        <div class="card-title">
+                            <span><i class="fas fa-wave-square"></i> INDICATEURS TECHNIQUES</span>
+                            <span style="font-size:0.6rem;opacity:0.5;" id="ind-time-${category}">--</span>
+                        </div>
+
+                        <div class="indicators-grid" style="margin-bottom:6px;">
+                            <div class="indicator-box" style="border-color:#ff6b00;">
+                                <div class="name">RSI (14)</div>
+                                <div class="value" id="ind-rsi-${category}" style="font-size:1.2rem;">--</div>
+                                <div class="sub-value" id="ind-rsi-status-${category}">--</div>
+                            </div>
+                            <div class="indicator-box" style="border-color:#00ccff;">
+                                <div class="name">MACD</div>
+                                <div class="value" id="ind-macd-${category}" style="font-size:1.2rem;">--</div>
+                                <div class="sub-value" id="ind-macd-status-${category}">--</div>
+                            </div>
+                            <div class="indicator-box" style="border-color:#ff66ff;">
+                                <div class="name">Volatilité</div>
+                                <div class="value" id="ind-volatility-${category}" style="font-size:1.2rem;">--</div>
+                                <div class="sub-value" id="ind-volatility-status-${category}">--</div>
+                            </div>
+                        </div>
+
+                        <div class="indicators-grid" style="margin-bottom:6px;">
+                            <div class="indicator-box" style="border-color:#2196F3;">
+                                <div class="name">SMA 20</div>
+                                <div class="value" id="ind-sma20-${category}">--</div>
+                            </div>
+                            <div class="indicator-box" style="border-color:#FF9800;">
+                                <div class="name">SMA 50</div>
+                                <div class="value" id="ind-sma50-${category}">--</div>
+                            </div>
+                            <div class="indicator-box" style="border-color:#9C27B0;">
+                                <div class="name">SMA 200</div>
+                                <div class="value" id="ind-sma200-${category}">--</div>
+                            </div>
+                        </div>
+
+                        <div class="indicators-grid">
+                            <div class="indicator-box" style="border-color:#4CAF50;">
+                                <div class="name">Bollinger</div>
+                                <div style="font-size:0.7rem;">
+                                    <div>Sup: <span id="ind-bb-upper-${category}">--</span></div>
+                                    <div>Inf: <span id="ind-bb-lower-${category}">--</span></div>
+                                </div>
+                            </div>
+                            <div class="indicator-box" style="border-color:#ffaa00;">
+                                <div class="name">Stochastic</div>
+                                <div style="font-size:0.7rem;">
+                                    <div>%K: <span id="ind-stoch-k-${category}">--</span></div>
+                                    <div>%D: <span id="ind-stoch-d-${category}">--</span></div>
+                                </div>
+                            </div>
+                            <div class="indicator-box" style="border-color:#e91e63;">
+                                <div class="name">Momentum</div>
+                                <div class="value" id="ind-momentum-${category}">--</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SIGNAUX IA -->
+                    <div class="card">
+                        <div class="card-title">
+                            <span><i class="fas fa-brain" style="color:#00ccff;"></i> INSIGHTS IA</span>
+                            <span id="signal-count-${category}" style="font-size:0.6rem;">--</span>
+                        </div>
+                        <div id="signals-container-${category}">
+                            <div class="signal-box signal-neutral">
+                                <span class="signal-icon">⏳</span>
+                                <div class="signal-content">
+                                    <div class="signal-title">ANALYSE IA EN COURS</div>
+                                    <div class="signal-text">Calcul des indicateurs...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="recommendation-container-${category}">
+                            <div class="recommendation-box recommendation-neutral">
+                                <div class="rec-title">NEUTRE</div>
+                                <div class="rec-confidence">CONFIANCE: --</div>
+                                <div style="margin-top:6px;display:flex;gap:12px;justify-content:center;font-size:0.8rem;">
+                                    <span style="color:#ff3333;">STOP-LOSS: --</span>
+                                    <span style="color:#33ff33;">TAKE-PROFIT: --</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PRÉDICTIONS -->
+                    <div class="card">
+                        <div class="card-title"><span><i class="fas fa-robot"></i> PRÉDICTIONS IA (5J)</span></div>
+                        <div class="prediction-grid" id="prediction-grid-${category}">
+                            <div class="prediction-item"><div class="day">J+1</div><div class="price" id="pred-1-${category}">--</div><div class="change-pred" id="pred-change-1-${category}"></div></div>
+                            <div class="prediction-item"><div class="day">J+2</div><div class="price" id="pred-2-${category}">--</div><div class="change-pred" id="pred-change-2-${category}"></div></div>
+                            <div class="prediction-item"><div class="day">J+3</div><div class="price" id="pred-3-${category}">--</div><div class="change-pred" id="pred-change-3-${category}"></div></div>
+                            <div class="prediction-item"><div class="day">J+4</div><div class="price" id="pred-4-${category}">--</div><div class="change-pred" id="pred-change-4-${category}"></div></div>
+                            <div class="prediction-item"><div class="day">J+5</div><div class="price" id="pred-5-${category}">--</div><div class="change-pred" id="pred-change-5-${category}"></div></div>
+                        </div>
+                    </div>
+
+                    <!-- WATCHLIST -->
+                    <div class="card">
+                        <div class="card-title"><span><i class="fas fa-star"></i> WATCHLIST</span><button class="btn btn-sm" onclick="refreshWatchlist('${category}')"><i class="fas fa-sync"></i></button></div>
+                        <div id="watchlist-${category}" class="watchlist-grid">CHARGEMENT...</div>
+                    </div>
+
+                    <!-- TOP PERFORMERS -->
+                    <div class="card">
+                        <div class="card-title"><span><i class="fas fa-trophy"></i> TOP PERFORMERS</span></div>
+                        <div id="top-performers-${category}">CHARGEMENT...</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ================================================================
+        // TABS
+        // ================================================================
+        function initTabs() {
+            var tabs = document.querySelectorAll('.tab');
+            tabs.forEach(function(tab) {
+                tab.addEventListener('click', function() {
+                    var tabId = this.dataset.tab;
+                    switchTab(tabId);
+                });
+            });
+        }
+
+        function switchTab(tabId) {
+            currentTab = tabId;
+            document.querySelectorAll('.tab').forEach(function(t) {
+                t.classList.toggle('active', t.dataset.tab === tabId);
+            });
+            document.querySelectorAll('.tab-content').forEach(function(c) {
+                c.classList.toggle('active', c.id === 'tab-' + tabId);
+            });
+
+            loadQuickButtons(tabId);
+            var defaultSym = defaultSymbols[tabId] || 'GC=F';
+            var input = document.getElementById('symbol-input-' + tabId);
+            if (input) input.value = defaultSym;
+            fetchDataForTab(tabId);
+        }
+
+        // ================================================================
+        // LOAD QUICK BUTTONS
+        // ================================================================
+        function loadQuickButtons(category) {
+            var container = document.getElementById('quick-buttons-' + category);
+            if (!container) return;
+            var symbols = categorySymbols[category] || [];
+            var html = '';
+            var count = 0;
+            symbols.forEach(function(sym) {
+                if (count >= 15) return;
+                var label = sym;
+                if (sym === 'GC=F') label = '🥇 OR';
+                else if (sym === 'SI=F') label = 'ARGENT';
+                else if (sym === 'CL=F') label = '🛢️ WTI';
+                else if (sym === 'BTC-USD') label = '₿ BTC';
+                else if (sym === 'ETH-USD') label = '⟠ ETH';
+                else if (sym === 'EURUSD=X') label = '🇪🇺🇺🇸 EUR/USD';
+                else if (sym === 'AAPL') label = '🍎 AAPL';
+                else if (sym === 'MSFT') label = '💻 MSFT';
+                else if (sym === 'ML.PA') label = '👔 LVMH';
+                else if (sym === 'PHO') label = '🌊 PHO';
+                else label = sym.replace('-USD', '').replace('.PA', '').replace('=X', '');
+                html += '<button class="btn btn-sm" onclick="quickSelect(\'' + sym + '\')">' + label + '</button>';
+                count++;
+            });
+            container.innerHTML = html;
+        }
+
+        // ================================================================
+        // FETCH DATA PAR TAB
+        // ================================================================
+        function fetchDataForTab(category) {
+            var input = document.getElementById('symbol-input-' + category);
+            if (!input) return;
+            var sym = input.value.trim() || defaultSymbols[category] || 'GC=F';
+            currentSymbol = sym;
+
+            var statusEl = document.getElementById('status');
+            statusEl.textContent = '⏳ CHARGEMENT...';
+            statusEl.style.borderColor = '#33ff33';
+
+            fetch(API_BASE + '/trading/' + encodeURIComponent(sym))
+                .then(r => {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(data => {
+                    if (data.error) {
+                        statusEl.textContent = '❌ ' + data.error;
+                        statusEl.style.borderColor = '#ff3333';
+                        return;
+                    }
+                    statusEl.textContent = '🟢 CONNECTÉ';
+                    statusEl.style.borderColor = '#33ff33';
+                    updateDisplay(data, category);
+                    updateChart(data, category);
+                    updateIndicators(data, category);
+                    document.getElementById('last-update-' + category).textContent = new Date().toLocaleTimeString('fr-FR');
+
+                    if (socket.connected) {
+                        socket.emit('request_insights', { symbol: sym });
+                    }
+                    // Sauvegarder le symbole favori
+                    try {
+                        var prefs = JSON.parse(localStorage.getItem('trading_monitor_prefs') || '{}');
+                        prefs.favorite_symbol = sym;
+                        localStorage.setItem('trading_monitor_prefs', JSON.stringify(prefs));
+                    } catch(e) {}
+                })
+                .catch(err => {
+                    statusEl.textContent = '❌ ERREUR: ' + err.message;
+                    statusEl.style.borderColor = '#ff3333';
+                    console.error(err);
+                });
+        }
+
+        function fetchData() {
+            fetchDataForTab(currentTab);
+        }
+
+        // ================================================================
+        // UPDATE DISPLAY
+        // ================================================================
+        function updateDisplay(data, category) {
+            var pd = data.data[currentPeriod] || data.data['1d'] || data.data['1mo'];
+            if (!pd) return;
+            var st = pd.stats;
+
+            var prefix = '-' + category;
+            document.getElementById('current-symbol' + prefix).textContent = data.symbol;
+            document.getElementById('current-exchange' + prefix).textContent = data.exchange || 'Market';
+            document.getElementById('current-category' + prefix).textContent = data.category || 'Autre';
+            document.getElementById('current-price' + prefix).textContent = '$' + st.current_price.toFixed(2);
+
+            var cls = st.change >= 0 ? 'change-positive' : 'change-negative';
+            var sign = st.change >= 0 ? '+' : '';
+            document.getElementById('current-change' + prefix).innerHTML =
+                '<span class="' + cls + '">' + sign + st.change_percent.toFixed(2) + '% (' + sign + st.change.toFixed(2) + ')</span>';
+
+            document.getElementById('day-high' + prefix).textContent = '$' + st.high.toFixed(2);
+            document.getElementById('day-low' + prefix).textContent = '$' + st.low.toFixed(2);
+
+            var vol = st.volume;
+            if (vol > 1000000) vol = (vol/1000000).toFixed(1) + 'M';
+            else if (vol > 1000) vol = (vol/1000).toFixed(1) + 'K';
+            document.getElementById('volume' + prefix).textContent = vol;
+        }
+
+        // ================================================================
+        // UPDATE INDICATEURS
+        // ================================================================
+        function updateIndicators(data, category) {
+            var pd = data.data[currentPeriod] || data.data['1d'] || data.data['1mo'];
+            if (!pd || !pd.indicators) return;
+
+            var ind = pd.indicators;
+            var prefix = '-' + category;
+
+            // RSI
+            var rsiVal = ind.last_rsi;
+            var rsiEl = document.getElementById('ind-rsi' + prefix);
+            if (rsiEl) {
+                rsiEl.textContent = rsiVal !== null && rsiVal !== undefined ? rsiVal.toFixed(1) : '--';
+                var rsiClass = rsiVal > 70 ? 'bearish' : rsiVal < 30 ? 'bullish' : 'neutral';
+                rsiEl.className = 'value ' + rsiClass;
+            }
+            var rsiStatus = document.getElementById('ind-rsi-status' + prefix);
+            if (rsiStatus) {
+                rsiStatus.textContent = rsiVal > 70 ? '🔴 Surachat' : rsiVal < 30 ? '🟢 Survente' : '🟡 Neutre';
+                rsiStatus.style.color = rsiVal > 70 ? '#ff3333' : rsiVal < 30 ? '#33ff33' : '#ffaa00';
+            }
+
+            // MACD
+            var macdVal = ind.last_macd;
+            var macdSig = ind.last_macd_signal;
+            var macdEl = document.getElementById('ind-macd' + prefix);
+            if (macdEl) {
+                macdEl.textContent = macdVal !== null && macdVal !== undefined ? macdVal.toFixed(3) : '--';
+                var macdClass = macdVal > macdSig ? 'bullish' : macdVal < macdSig ? 'bearish' : 'neutral';
+                macdEl.className = 'value ' + macdClass;
+            }
+            var macdStatus = document.getElementById('ind-macd-status' + prefix);
+            if (macdStatus) {
+                macdStatus.textContent = macdVal > macdSig ? '🟢 HAUSSIER' : macdVal < macdSig ? '🔴 BAISSIER' : '🟡 NEUTRE';
+                macdStatus.style.color = macdVal > macdSig ? '#33ff33' : macdVal < macdSig ? '#ff3333' : '#ffaa00';
+            }
+
+            // Volatilité
+            var volVal = ind.volatility;
+            var volEl = document.getElementById('ind-volatility' + prefix);
+            if (volEl) {
+                volEl.textContent = volVal !== null && volVal !== undefined ? volVal.toFixed(1) + '%' : '--';
+                var volClass = volVal > 50 ? 'bearish' : volVal < 15 ? 'bullish' : 'neutral';
+                volEl.className = 'value ' + volClass;
+            }
+            var volStatus = document.getElementById('ind-volatility-status' + prefix);
+            if (volStatus) {
+                volStatus.textContent = volVal > 50 ? '🔴 Élevée' : volVal < 15 ? '🟢 Faible' : '🟡 Moyenne';
+                volStatus.style.color = volVal > 50 ? '#ff3333' : volVal < 15 ? '#33ff33' : '#ffaa00';
+            }
+
+            // SMA
+            document.getElementById('ind-sma20' + prefix).textContent = ind.last_sma_20 !== null && ind.last_sma_20 !== undefined ? '$' + ind.last_sma_20.toFixed(2) : '--';
+            document.getElementById('ind-sma50' + prefix).textContent = ind.last_sma_50 !== null && ind.last_sma_50 !== undefined ? '$' + ind.last_sma_50.toFixed(2) : '--';
+            document.getElementById('ind-sma200' + prefix).textContent = ind.last_sma_200 !== null && ind.last_sma_200 !== undefined ? '$' + ind.last_sma_200.toFixed(2) : '--';
+
+            // Bollinger
+            document.getElementById('ind-bb-upper' + prefix).textContent = ind.last_bb_upper !== null && ind.last_bb_upper !== undefined ? '$' + ind.last_bb_upper.toFixed(2) : '--';
+            document.getElementById('ind-bb-lower' + prefix).textContent = ind.last_bb_lower !== null && ind.last_bb_lower !== undefined ? '$' + ind.last_bb_lower.toFixed(2) : '--';
+
+            // Stochastic
+            document.getElementById('ind-stoch-k' + prefix).textContent = ind.last_stoch_k !== null && ind.last_stoch_k !== undefined ? ind.last_stoch_k.toFixed(1) : '--';
+            document.getElementById('ind-stoch-d' + prefix).textContent = ind.last_stoch_d !== null && ind.last_stoch_d !== undefined ? ind.last_stoch_d.toFixed(1) : '--';
+
+            // Momentum
+            var momVal = ind.momentum;
+            var momEl = document.getElementById('ind-momentum' + prefix);
+            if (momEl) {
+                momEl.textContent = momVal !== null && momVal !== undefined ? (momVal >= 0 ? '+' : '') + momVal.toFixed(1) + '%' : '--';
+                var momClass = momVal > 5 ? 'bullish' : momVal < -5 ? 'bearish' : 'neutral';
+                momEl.className = 'value ' + momClass;
+            }
+
+            document.getElementById('ind-time' + prefix).textContent = new Date().toLocaleTimeString('fr-FR');
+        }
+
+        // ================================================================
+        // UPDATE IA INSIGHTS
+        // ================================================================
+        function updateAIInsights(data) {
+            if (!data || data.error) return;
+
+            var category = null;
+            for (var cat in categorySymbols) {
+                if (data.symbol && categorySymbols[cat].indexOf(data.symbol) !== -1) {
+                    category = cat;
+                    break;
+                }
+            }
+            if (!category) category = currentTab;
+
+            var prefix = '-' + category;
+
+            // Score IA
+            var scoreEl = document.getElementById('ia-score' + prefix);
+            if (scoreEl) {
+                var score = data.score || 0;
+                var color = score > 20 ? '#33ff33' : score < -20 ? '#ff3333' : '#ffaa00';
+                scoreEl.textContent = score.toFixed(1);
+                scoreEl.style.color = color;
+            }
+
+            // Recommandation
+            var recoEl = document.getElementById('ia-reco' + prefix);
+            if (recoEl) {
+                var rec = data.recommendation || 'NEUTRE';
+                var color = rec === 'ACHAT' ? '#33ff33' : rec === 'VENTE' ? '#ff3333' : '#ffaa00';
+                recoEl.textContent = rec;
+                recoEl.style.color = color;
+            }
+
+            // Confiance
+            var confEl = document.getElementById('ia-conf' + prefix);
+            if (confEl) {
+                confEl.textContent = (data.confidence || 50).toFixed(0) + '%';
+            }
+
+            // Signaux
+            var signals = data.signals || [];
+            var signalsContainer = document.getElementById('signals-container' + prefix);
+            if (signalsContainer) {
+                if (signals.length === 0) {
+                    signalsContainer.innerHTML = '<div class="signal-box signal-neutral"><span class="signal-icon">🟡</span><div class="signal-content"><div class="signal-title">NEUTRE</div><div class="signal-text">Aucun signal détecté</div></div></div>';
+                } else {
+                    var html = '';
+                    signals.forEach(function(s) {
+                        var cls = s.type === 'buy' ? 'signal-buy' : s.type === 'sell' ? 'signal-sell' : 'signal-neutral';
+                        var icon = s.type === 'buy' ? '🟢' : s.type === 'sell' ? '🔴' : '🟡';
+                        html += '<div class="signal-box ' + cls + '">';
+                        html += '<span class="signal-icon">' + icon + '</span>';
+                        html += '<div class="signal-content">';
+                        html += '<div class="signal-title">' + s.type.toUpperCase() + ' - ' + s.indicator + '</div>';
+                        html += '<div class="signal-text">' + s.message + ' (' + s.value + ')</div>';
+                        html += '</div></div>';
+                    });
+                    signalsContainer.innerHTML = html;
+                }
+            }
+
+            // Nombre de signaux
+            var signalCount = document.getElementById('signal-count' + prefix);
+            if (signalCount) {
+                var buyCount = data.buy_signals || 0;
+                var sellCount = data.sell_signals || 0;
+                signalCount.innerHTML = '<span class="signal-count buy">🟢 ' + buyCount + '</span> <span class="signal-count sell">🔴 ' + sellCount + '</span>';
+            }
+
+            // Recommandation
+            var recoContainer = document.getElementById('recommendation-container' + prefix);
+            if (recoContainer) {
+                var rec = data.recommendation || 'NEUTRE';
+                var conf = data.confidence || 50;
+                var sl = data.stop_loss || 0;
+                var tp = data.take_profit || 0;
+
+                var recClass = rec === 'ACHAT' ? 'recommendation-buy' : rec === 'VENTE' ? 'recommendation-sell' : 'recommendation-neutral';
+                var color = rec === 'ACHAT' ? '#33ff33' : rec === 'VENTE' ? '#ff3333' : '#ffaa00';
+
+                recoContainer.innerHTML =
+                    '<div class="recommendation-box ' + recClass + '">' +
+                        '<div class="rec-title" style="color:' + color + ';">' + rec + '</div>' +
+                        '<div class="rec-confidence">CONFIANCE: ' + conf + '%</div>' +
+                        '<div style="margin-top:6px;display:flex;gap:12px;justify-content:center;font-size:0.8rem;">' +
+                            '<span style="color:#ff3333;">STOP-LOSS: $' + sl.toFixed(2) + '</span>' +
+                            '<span style="color:#33ff33;">TAKE-PROFIT: $' + tp.toFixed(2) + '</span>' +
+                        '</div>' +
+                    '</div>';
+            }
+
+            // Prédictions
+            var preds = data.predictions || [];
+            var cp = data.current_price || 0;
+            for (var i = 0; i < 5; i++) {
+                var el = document.getElementById('pred-' + (i + 1) + prefix);
+                var ce = document.getElementById('pred-change-' + (i + 1) + prefix);
+                if (el && i < preds.length) {
+                    var p = preds[i];
+                    var ch = ((p - cp) / cp * 100);
+                    var cc = ch > 0 ? '#33ff33' : ch < 0 ? '#ff3333' : '#ffaa00';
+                    el.textContent = '$' + p.toFixed(2);
+                    el.style.color = cc;
+                    if (ce) {
+                        ce.textContent = (ch >= 0 ? '+' : '') + ch.toFixed(1) + '%';
+                        ce.style.color = cc;
+                    }
+                }
+            }
+        }
+
+        // ================================================================
+        // CHART
+        // ================================================================
+        function updateChart(data, category) {
+            var pd = data.data[currentPeriod] || data.data['1d'] || data.data['1mo'];
+            if (!pd) return;
+
+            candlesData = pd.candles || [];
+            if (candlesData.length === 0) return;
+
+            var containerId = 'chart-container-' + category;
+            var container = document.getElementById(containerId);
+            if (!container) return;
+
+            container.innerHTML = '';
+
+            if (typeof LightweightCharts === 'undefined') {
+                container.innerHTML = '<div style="color:#ff3333;text-align:center;padding:20px;">❌ Librairie non chargée</div>';
+                return;
+            }
+
+            var chartInstance = LightweightCharts.createChart(container, {
+                width: container.clientWidth,
+                height: 400,
+                layout: {
+                    background: { color: '#0a0a0a' },
+                    textColor: '#33ff33',
+                    fontFamily: "'VT323', monospace"
+                },
+                grid: {
+                    vertLines: { color: '#1a1a1a' },
+                    horzLines: { color: '#1a1a1a' }
+                },
+                timeScale: {
+                    borderColor: '#33ff33',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+                rightPriceScale: {
+                    borderColor: '#33ff33',
+                    scaleMargins: { top: 0.05, bottom: activeIndicators.volume ? 0.25 : 0.05 }
+                }
+            });
+
+            var chartData = candlesData.map(function(c) {
+                return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
+            });
+
+            if (chartType === 'candle') {
+                var series = chartInstance.addCandlestickSeries({
+                    upColor: '#33ff33',
+                    downColor: '#ff3333',
+                    borderUpColor: '#33ff33',
+                    borderDownColor: '#ff3333',
+                    wickUpColor: '#33ff33',
+                    wickDownColor: '#ff3333',
+                    priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                });
+                series.setData(chartData);
+            } else {
+                var series = chartInstance.addLineSeries({
+                    color: '#33ff33',
+                    lineWidth: 2,
+                    priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                });
+                series.setData(chartData.map(function(c) { return { time: c.time, value: c.close }; }));
+            }
+
+            var ind = pd.indicators || {};
+
+            // SMA
+            if (activeIndicators.sma && ind.sma_20) {
+                var sma20Data = buildLineData(candlesData, ind.sma_20);
+                if (sma20Data.length > 0) {
+                    var sma20Series = chartInstance.addLineSeries({
+                        color: '#2196F3',
+                        lineWidth: 1,
+                        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                    });
+                    sma20Series.setData(sma20Data);
+                }
+                if (ind.sma_50) {
+                    var sma50Data = buildLineData(candlesData, ind.sma_50);
+                    if (sma50Data.length > 0) {
+                        var sma50Series = chartInstance.addLineSeries({
+                            color: '#FF9800',
+                            lineWidth: 1,
+                            priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                        });
+                        sma50Series.setData(sma50Data);
+                    }
+                }
+                if (ind.sma_200) {
+                    var sma200Data = buildLineData(candlesData, ind.sma_200);
+                    if (sma200Data.length > 0) {
+                        var sma200Series = chartInstance.addLineSeries({
+                            color: '#9C27B0',
+                            lineWidth: 1,
+                            priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                        });
+                        sma200Series.setData(sma200Data);
+                    }
+                }
+            }
+
+            // EMA
+            if (activeIndicators.ema && ind.ema_12) {
+                var ema12Data = buildLineData(candlesData, ind.ema_12);
+                if (ema12Data.length > 0) {
+                    var ema12Series = chartInstance.addLineSeries({
+                        color: '#00ccff',
+                        lineWidth: 1,
+                        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                    });
+                    ema12Series.setData(ema12Data);
+                }
+                if (ind.ema_26) {
+                    var ema26Data = buildLineData(candlesData, ind.ema_26);
+                    if (ema26Data.length > 0) {
+                        var ema26Series = chartInstance.addLineSeries({
+                            color: '#ff6b00',
+                            lineWidth: 1,
+                            priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                        });
+                        ema26Series.setData(ema26Data);
+                    }
+                }
+            }
+
+            // Bollinger
+            if (activeIndicators.bb && ind.bb_upper) {
+                var bbUpperData = buildLineData(candlesData, ind.bb_upper);
+                var bbLowerData = buildLineData(candlesData, ind.bb_lower);
+                if (bbUpperData.length > 0) {
+                    var bbUpperSeries = chartInstance.addLineSeries({
+                        color: '#4CAF50',
+                        lineWidth: 1,
+                        lineStyle: 2,
+                        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                    });
+                    bbUpperSeries.setData(bbUpperData);
+                }
+                if (bbLowerData.length > 0) {
+                    var bbLowerSeries = chartInstance.addLineSeries({
+                        color: '#4CAF50',
+                        lineWidth: 1,
+                        lineStyle: 2,
+                        priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+                    });
+                    bbLowerSeries.setData(bbLowerData);
+                }
+            }
+
+            // Volume
+            if (activeIndicators.volume) {
+                var volSeries = chartInstance.addHistogramSeries({
+                    color: '#4488ff',
+                    priceFormat: { type: 'volume' },
+                    priceScaleId: 'volume',
+                    scaleMargins: { top: 0.80, bottom: 0 },
+                });
+                volSeries.setData(candlesData.map(function(c) {
+                    return {
+                        time: c.time,
+                        value: c.volume,
+                        color: c.close >= c.open ? 'rgba(51,255,51,0.3)' : 'rgba(255,51,51,0.3)'
+                    };
+                }));
+            }
+
+            chartInstance.timeScale().fitContent();
+            window['chart_' + category] = chartInstance;
+            chart = chartInstance;
+        }
+
+        function buildLineData(candles, data) {
+            var result = [];
+            for (var i = 0; i < candles.length && i < data.length; i++) {
+                if (data[i] !== null && data[i] !== undefined && !isNaN(data[i])) {
+                    result.push({ time: candles[i].time, value: data[i] });
+                }
+            }
+            return result;
+        }
+
+        // ================================================================
+        // CONTROLES
+        // ================================================================
+        function changePeriod(period) {
+            currentPeriod = period;
+            document.querySelectorAll('[data-period]').forEach(function(b) {
+                b.classList.toggle('active', b.dataset.period === period);
+            });
+            fetchDataForTab(currentTab);
+        }
+
+        function changeChartType(type) {
+            chartType = type;
+            document.querySelectorAll('[data-type]').forEach(function(b) {
+                b.classList.toggle('active', b.dataset.type === type);
+            });
+            if (candlesData.length > 0) {
+                var data = { data: {} };
+                data.data[currentPeriod] = { candles: candlesData };
+                updateChart(data, currentTab);
+            }
+        }
+
+        function toggleIndicator(indicator) {
+            activeIndicators[indicator] = !activeIndicators[indicator];
+            var btn = document.querySelector('[data-indicator="' + indicator + '"]');
+            if (btn) btn.classList.toggle('active');
+            // Sauvegarder les préférences
+            savePrefs();
+            fetchDataForTab(currentTab);
+        }
+
+        function quickSelect(symbol) {
+            var foundCat = null;
+            for (var cat in categorySymbols) {
+                if (categorySymbols[cat].indexOf(symbol) !== -1) {
+                    foundCat = cat;
+                    break;
+                }
+            }
+            if (!foundCat) foundCat = 'commodities';
+            if (currentTab !== foundCat) switchTab(foundCat);
+            var input = document.getElementById('symbol-input-' + foundCat);
+            if (input) {
+                input.value = symbol;
+                fetchDataForTab(foundCat);
+            }
+        }
+
+        // ================================================================
+        // WATCHLIST & TOP PERFORMERS
+        // ================================================================
+        function refreshWatchlist(category) {
+            var container = document.getElementById('watchlist-' + category);
+            if (!container) return;
+            container.innerHTML = 'CHARGEMENT...';
+
+            fetch(API_BASE + '/watchlist')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.error) {
+                        container.innerHTML = '❌ INDISPONIBLE';
+                        return;
+                    }
+                    var catName = categoryNames[category] || category;
+                    var filtered = data.filter(function(item) {
+                        return item.category === catName;
+                    });
+                    if (filtered.length === 0) filtered = data.slice(0, 15);
+
+                    var html = '';
+                    filtered.forEach(function(item) {
+                        if (item.error) return;
+                        var cls = item.changePercent >= 0 ? 'change-positive' : 'change-negative';
+                        var sign = item.changePercent >= 0 ? '+' : '';
+                        html += '<div class="watchlist-item" onclick="quickSelect(\'' + item.symbol + '\')">';
+                        html += '<span><span class="icon">' + (item.icon || '📈') + '</span> ' + item.symbol + '</span>';
+                        html += '<span>$' + item.price.toFixed(2) + ' <span class="' + cls + '">' + sign + item.changePercent.toFixed(2) + '%</span></span>';
+                        html += '</div>';
+                    });
+                    container.innerHTML = html;
+                })
+                .catch(err => {
+                    container.innerHTML = '❌ ERREUR';
+                    console.error(err);
+                });
+        }
+
+        function refreshTopPerformers(category) {
+            var container = document.getElementById('top-performers-' + category);
+            if (!container) return;
+            container.innerHTML = 'CHARGEMENT...';
+
+            fetch(API_BASE + '/top-performers')
+                .then(r => r.json())
+                .then(data => {
+                    if (!data || data.error) {
+                        container.innerHTML = '❌ INDISPONIBLE';
+                        return;
+                    }
+                    var html = '';
+                    data.forEach(function(item, idx) {
+                        var cls = item.changePercent >= 0 ? 'change-positive' : 'change-negative';
+                        var sign = item.changePercent >= 0 ? '+' : '';
+                        var star = idx === 0 ? '🏆 ' : '';
+                        html += '<div class="watchlist-item" onclick="quickSelect(\'' + item.symbol + '\')">';
+                        html += '<span>' + star + '<span class="icon">' + (item.icon || '📈') + '</span> ' + item.symbol + '</span>';
+                        html += '<span>$' + item.price.toFixed(2) + ' <span class="' + cls + '">' + sign + item.changePercent.toFixed(2) + '%</span></span>';
+                        html += '</div>';
+                    });
+                    container.innerHTML = html;
+                })
+                .catch(err => {
+                    container.innerHTML = '❌ ERREUR';
+                    console.error(err);
+                });
+        }
+
+        // ================================================================
+        // RESIZE
+        // ================================================================
+        window.addEventListener('resize', function() {
+            for (var cat in categorySymbols) {
+                var container = document.getElementById('chart-container-' + cat);
+                if (container && window['chart_' + cat]) {
+                    try {
+                        window['chart_' + cat].resize(container.clientWidth, 400);
+                    } catch(e) {}
+                }
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                var activeInput = document.activeElement;
+                if (activeInput && activeInput.id && activeInput.id.startsWith('symbol-input-')) {
+                    var cat = activeInput.id.replace('symbol-input-', '');
+                    fetchDataForTab(cat);
+                }
+                if (activeInput && activeInput.id === 'compare-input') {
+                    runCompare();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
